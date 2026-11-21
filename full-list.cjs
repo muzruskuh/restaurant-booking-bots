@@ -28,7 +28,10 @@ function parseMonthHeader(line) {
 }
 
 function isSlotLine(line) {
-  return /^\d{1,2}[:;]?\d{2}/.test(stripGlyphs(line).trim());
+  if (!/^\d{1,2}[:;]?\d{2}/.test(stripGlyphs(line).trim())) return false;
+  // Должно быть валидным временем (часы 0-23), иначе «2500 /Дарья/...» не станет слотом.
+  const t = parseSlotTime(stripGlyphs(line).trim());
+  return t != null;
 }
 
 function parseSlotTime(line) {
@@ -104,7 +107,10 @@ function slotName(detailLines) {
   for (const ln of detailLines) {
     const s = ln.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}🔳🟪🔵🎂🌲🏡❌✅‼️❓⚪️🟢❔\s]+/u, "").trim();
     if (!s) continue;
-    if (/предзаказ|общая|предоплат|осталось|торт|стол|зал|окно|мессенджер|чат|меню/i.test(s)) continue;
+    if (/предзаказ|общая|предоплат|осталось|торт|стол|зал|окно|мессенджер|чат|меню|мезонин/i.test(s)) continue;
+    // «ЧИСЛО /Имя/ N+N реб» / «2500 /Дарья/ 5+5 реб» — имя между слэшами
+    const ms = s.match(/\/\s*([А-ЯЁA-Z][а-яёa-zA-Z\-]+(?:[\s\-][А-ЯЁA-Z][а-яёa-zA-Z\-]+)?)\s*\//);
+    if (ms) return ms[1];
     // Имя, стоящее перед "/" или с числом после себя
     const m = s.match(/^\s*([А-ЯЁA-Z][а-яёa-zA-Z\-]+(?:[\s\-][А-ЯЁA-Z][а-яёa-zA-Z\-]+)?)\s*(?:\/|\d)/);
     if (m) return m[1];
@@ -202,16 +208,24 @@ function finalizeSlot(cur) {
 
 // Кол-во человек слота из накопленных строк деталей.
 function slotGuests(detailLines) {
-  const p = n => String(n).padStart(2,"0");
   for (const ln of detailLines) {
     const s = ln.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}🔳🟪🔵🎂🌲🏡❌✅‼️❓⚪️🟢❔\s]+/u, "").trim();
-    // пропускаем строки про стол/зал/количество торта (стол 40, 7 шт и т.п.)
-    if (/стол|зал|шт|торт|мессенджер|чат|предоплат|осталось|общая/i.test(s)) continue;
+    // сроки чисто про торт/мессенджер/предоплату/остаток — без гостей
+    if (/торт|мессенджер|чат|предоплат|осталось|общая|шт/i.test(s) && !/\s[А-ЯЁA-Z]/.test(s)) continue;
+    if (/^\s*(40|50|60)\s+(стол|зал)/i.test(s)) continue; // «40 СТОЛ», «50 ЗАЛ» — не гости
+    // «9 Таисия 3 стол❓» / «4 Светлана В2» / «Нина 3 стол» — число перед именем
+    const mSt = s.match(/(\d{1,2})\s+([А-ЯЁA-Z][а-яёa-zA-Z\-]+(?:\s[А-ЯЁA-Z][а-яёa-zA-Z\-]+)?)\s+(?:\d{1,2}\s*)?(?:стол|зал|окно)?/i);
+    // «Дарья / 5+5 реб» / «Татьяна /10+2 реб» / «2500 /Дарья/ 5+5 реб»
+    const mp = s.match(/([А-ЯЁ][а-яё]+)\s*\/\s*(\d+)\s*\+\s*(\d+)\s*реб/i) ||
+               s.match(/\b(\d+)\s*\+\s*(\d+)\s*реб/i);
+    if (mp) {
+      const a = mp[2] ? Number(mp[2]) : Number(mp[1]);
+      const b = mp[3] ? Number(mp[3]) : Number(mp[2]);
+      return a + b;
+    }
+    if (mSt) { const n = Number(mSt[1]); if (n > 0 && n <= 60) return n; }
     let g = extractGuests(s);
     if (g != null) return g;
-    // «Дарья / 5+5 реб» / «Татьяна /10+2 реб»
-    const m = s.match(/([А-ЯЁ][а-яё]+)\s*\/\s*(\d+)\s*\+\s*(\d+)\s*реб/i);
-    if (m) return Number(m[2]) + Number(m[3]);
   }
   return null;
 }
