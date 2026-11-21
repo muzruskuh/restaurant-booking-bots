@@ -3,6 +3,7 @@
 const http = require("http");
 const PORT = process.env.PORT || 10000;
 const TOKEN = process.env.BOT_INCOMING_TOKEN || "";
+const VER = "v2026.11.21-e"; // маркер версии: передеплой после фикса sameSlot в одиночной ветке
 
 async function checkTelegram() {
   try {
@@ -23,6 +24,7 @@ const server = http.createServer(async (req, res) => {
     const t = await checkTelegram();
     const parts = [];
     parts.push("<h1>Боты календаря ресторана</h1>");
+    parts.push("<p>Версия: " + VER + "</p>");
     parts.push("<p>Время сервера: " + new Date().toISOString() + "</p>");
     if (t.ok) {
       parts.push("<p style='color:green'>✅ api.telegram.org доступен</p>");
