@@ -7,6 +7,7 @@
 //
 // Запуск:  node bot-incoming.cjs
 const { rpc, getChangeLog, parseSlot } = require("./bots.common.cjs");
+const { parseFullList } = require("./full-list.cjs");
 
 const TOKEN = process.env.BOT_INCOMING_TOKEN || "";
 const API = "https://api.telegram.org/bot" + TOKEN;
@@ -107,9 +108,82 @@ function fmtSlot(slot) {
   return (slot.slice(0, 10) + " " + slot.slice(11, 16));
 }
 
+// Дата для разобранного слота: из заголовка месяца/даты или сегодня (чат текущего дня).
+function dateFromSlot(sl, chatId) {
+  if (sl.date && sl.date.d) {
+    const y = sl.date.y || (sl.date.mo <= 2 ? 2027 : 2026);
+    const isoDay = `${y}-${String(sl.date.mo).padStart(2,"0")}-${String(sl.date.d).padStart(2,"0")}`;
+    return { date: `${String(sl.date.d).padStart(2,"0")}.${String(sl.date.mo).padStart(2,"0")}`, isoDay };
+  }
+  if (chatId === CHAT_CURRENT_ID) {
+    const t = todayMsk(); const [d, mo] = t.split(".").map(Number);
+    let y = 2026; if (mo <= 2) y = 2027;
+    return { date: t, isoDay: `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}` };
+  }
+  return null;
+}
+
+// Режим «полный список броней»: разобрать весь список, внести ТОЛЬКО новые брони
+// (сверка по слоту дата+время + имени), существующие не трогать, дубли не создавать.
+async function handleFullList(slots, chatId) {
+  // Группируем слоты по дате, чтобы загрузить существующие брони одним запросом на день.
+  const groups = new Map();
+  for (const sl of slots) {
+    if (!sl.name) continue; // блокировка/пустая ячейка без имени — не создаём
+    const dateInfo = dateFromSlot(sl, chatId);
+    if (!dateInfo) continue;
+    const key = dateInfo.isoDay;
+    if (!groups.has(key)) groups.set(key, { dateInfo, items: [] });
+    groups.get(key).items.push(sl);
+  }
+  let added = 0, skipped = 0;
+  const reports = [];
+  for (const { dateInfo, items } of groups.values()) {
+    const day = slotDay(dateInfo.date);
+    const row = await rpc("get_reservations", { p_from: day, p_to: dayNext(day) });
+    for (const sl of items) {
+      const slotStr = parseSlot(dateInfo.date, sl.slot);
+      const exists = row.some(r =>
+        r.slot === slotStr && r.name && sl.name &&
+        r.name.trim().toLowerCase() === sl.name.trim().toLowerCase());
+      if (exists) { skipped++; continue; }
+      await rpc("create_reservation", {
+        p_data: {
+          slot: slotStr, name: sl.name, guests: sl.guests || 2,
+          phone: sl.phone || null, comment: sl.comment || null,
+          preorder: !!sl.preorder,
+          total_sum: sl.total_sum != null ? String(sl.total_sum) : null,
+          deposit: sl.deposit_sum != null,
+          deposit_sum: sl.deposit_sum != null ? String(sl.deposit_sum) : null,
+          deposit_method: sl.deposit_method || null,
+          cake: sl.cake || null,
+          no_booking: !!sl.no_booking,
+          source: "bot"
+        }
+      });
+      added++;
+      reports.push("+ " + sl.name + " · " + fmtSlot(slotStr) + " · " + (sl.guests || 2) + " чел");
+    }
+  }
+  if (added === 0) {
+    return "Разобрал полный список: новых броней нет (все уже есть в базе)" +
+      (skipped ? " — совпало по слоту+имени: " + skipped + "." : ".");
+  }
+  return "Внёс из списка новых броней: " + added +
+    (skipped ? ", уже есть (пропущено): " + skipped : "") +
+    (reports.length ? "\n" + reports.join("\n") : "");
+}
+
 async function handleMessage(txt, chatId) {
   const s = (txt || "").trim();
   if (!s) return null;
+  // Режим «полный список»: если разобралось ≥2 слотов — обрабатываем как список целиком.
+  // Проверка ДО isService: в списке есть служебные строки («время», «стоп»), их нельзя
+  // принимать за маркер «молчать».
+  const fullSlots = parseFullList(s);
+  if (fullSlots.length >= 2) {
+    return await handleFullList(fullSlots, chatId);
+  }
   // Служебная информация в чате текущего дня — молча игнорируем (вернём null)
   if (isService(s)) return null;
 
