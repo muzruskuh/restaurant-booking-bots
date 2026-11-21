@@ -42,14 +42,24 @@ const FIELD_MAP = {
   responsible: "ответственный", no_booking: "НЕ БРОНИРОВАТЬ"
 };
 
-function fmtTime(slot) { return (slot || "").slice(11, 16); }
+// Конвертировать ISO-слот (UTC) в московское время → [дата, время]
+function mskDate(slot) {
+  const dt = new Date(slot);
+  const d = new Date(dt.getTime() + 3 * 3600 * 1000);
+  const p = n => String(n).padStart(2, "0");
+  const date = d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate());
+  const time = p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+  return { date, time };
+}
+function fmtTime(slot) { return mskDate(slot).time; }
+function slotDate(slot) { return mskDate(slot).date; }
 
 // Строки брони по вашим правилам. Пара филиалов: showDate (для чата «Брони»).
 function bookingLines(rec, showDate) {
   const L = [];
-  const dateStr = rec.slot.slice(0, 10);
-  if (showDate) L.push(dateStr);
-  L.push("🔳 " + fmtTime(rec.slot));
+  const { date, time } = mskDate(rec.slot);
+  if (showDate) L.push(date);
+  L.push("🔳 " + time);
   L.push((rec.guests || "?") + " человек " + (rec.name || ""));
   // Опциональные поля — строка только если есть значение/чекбокс (жирным — те, что вы указали)
   if (rec.phone) L.push("Телефон: " + esc(rec.phone));
