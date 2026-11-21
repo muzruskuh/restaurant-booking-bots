@@ -13,6 +13,16 @@ const TOKEN = process.env.BOT_INCOMING_TOKEN || "";
 const API = "https://api.telegram.org/bot" + TOKEN;
 const CHAT_FUTURE_ID = Number(process.env.CHAT_FUTURE_ID || 0);
 const CHAT_CURRENT_ID = Number(process.env.CHAT_CURRENT_ID || 0);
+const fs = require("fs");
+const OFFSET_FILE = __dirname + "/.bot-incoming.offset";
+
+function loadOffset() {
+  try { return Number(fs.readFileSync(OFFSET_FILE, "utf8")) || 0; }
+  catch (e) { return 0; }
+}
+function saveOffset(v) {
+  try { fs.writeFileSync(OFFSET_FILE, String(v)); } catch (e) { /* не критично */ }
+}
 
 async function tg(method, payload) {
   const r = await fetch(API + "/" + method, {
@@ -285,7 +295,10 @@ async function main() {
   if (!TOKEN) { console.error("Задайте BOT_INCOMING_TOKEN в .env"); process.exit(1); }
   console.log("Бот-приёмник запущен (polling). Выход — Ctrl+C");
   console.log("Подсказка: напишите боту /id из чата → он вернёт id этого чата.");
-  let offset = 0;
+  // offset персистентный: переживает перезапуск Render, иначе бот заново
+  // читает всю очередь getUpdates и плодит дубли.
+  let offset = loadOffset();
+  console.log("offset старта:", offset);
   while (true) {
     let updates;
     try {
@@ -296,7 +309,9 @@ async function main() {
       continue;
     }
     for (const u of updates) {
+      // фиксируем прогресс ДО обработки, чтобы даже при сбое не повторять
       offset = u.update_id + 1;
+      saveOffset(offset);
       if (!u.message || !u.message.text) continue;
       const chatId = u.message.chat.id;
       try {

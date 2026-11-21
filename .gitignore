@@ -10,3 +10,6 @@ npm-debug.log*
 # ОС
 .DS_Store
 Thumbs.db
+
+# Состояние бота (offset) — не коммитить
+.bot-incoming.offset
