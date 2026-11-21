@@ -108,6 +108,14 @@ function fmtSlot(slot) {
   return (slot.slice(0, 10) + " " + slot.slice(11, 16));
 }
 
+// Сравнить два слота по моменту времени (не по строке!): Supabase возвращает slot в UTC,
+// а parseSlot у нас строит +03:00, поэтому строчное сравнение ложно даёт «не совпадает».
+function sameSlot(a, b) {
+  if (!a || !b) return false;
+  const ta = new Date(a).getTime(), tb = new Date(b).getTime();
+  return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb;
+}
+
 // Дата для разобранного слота: из заголовка месяца/даты или сегодня (чат текущего дня).
 function dateFromSlot(sl, chatId) {
   if (sl.date && sl.date.d) {
@@ -144,7 +152,7 @@ async function handleFullList(slots, chatId) {
     for (const sl of items) {
       const slotStr = parseSlot(dateInfo.date, sl.slot);
       const exists = row.some(r =>
-        r.slot === slotStr && r.name && sl.name &&
+        sameSlot(r.slot, slotStr) && r.name && sl.name &&
         r.name.trim().toLowerCase() === sl.name.trim().toLowerCase());
       if (exists) { skipped++; continue; }
       await rpc("create_reservation", {
