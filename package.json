@@ -1,0 +1,16 @@
+{
+  "name": "restaurant-booking-bots",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Телеграм-боты календаря броней ресторана (приёмник + уведомления)",
+  "main": "bot-incoming.cjs",
+  "scripts": {
+    "start:incoming": "node bot-incoming.cjs",
+    "start:outgoing": "node bot-outgoing.cjs",
+    "start": "./start.sh"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}

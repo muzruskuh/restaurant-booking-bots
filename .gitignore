@@ -1,0 +1,12 @@
+# Секреты — не коммитить
+.env
+*.env
+!*.env.example
+
+# Node
+node_modules/
+npm-debug.log*
+
+# ОС
+.DS_Store
+Thumbs.db
