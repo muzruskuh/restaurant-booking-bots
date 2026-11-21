@@ -237,12 +237,13 @@ async function handleMessage(txt, chatId) {
 
   // ===== ОТМЕНА =====
   if (/удали|отмени|сними|убрать/.test(s)) {
-    const atSlot = row.filter(r => r.slot === parseSlot(dateInfo.date, time));
-    if (!atSlot.length) return "На " + fmtSlot(parseSlot(dateInfo.date, time)) + " броней нет.";
+    const sp = parseSlot(dateInfo.date, time);
+    const atSlot = row.filter(r => sameSlot(r.slot, sp));
+    if (!atSlot.length) return "На " + fmtSlot(sp) + " броней нет.";
     const tgt = (name && atSlot.find(r => r.name && r.name.toLowerCase().includes(name.toLowerCase())))
       || atSlot[0];
     await rpc("delete_reservation", { p_data: { id: tgt.id, source: "bot" } });
-    return "Удалено: " + tgt.name + " · " + fmtSlot(parseSlot(dateInfo.date, time));
+    return "Удалено: " + tgt.name + " · " + fmtSlot(sp);
   }
 
   // ===== ПЕРЕНОС времени =====
@@ -253,7 +254,7 @@ async function handleMessage(txt, chatId) {
     // старое время — первое (или исходное из extractTime)
     const oldSlot = parseSlot(dateInfo.date, time);
     if (!name) return "Укажите имя брони для переноса. Пример: «перенеси Марина 22.11 16:00 на 18:00»";
-    const target = row.find(r => name && r.name && (r.name.toLowerCase().includes(name.toLowerCase())) && r.slot === oldSlot)
+    const target = row.find(r => name && r.name && (r.name.toLowerCase().includes(name.toLowerCase())) && sameSlot(r.slot, oldSlot))
       || row.find(r => name && r.name && r.name.toLowerCase() === name.toLowerCase());
     if (!target) return "Не нашёл бронь «" + name + "» на " + fmtSlot(oldSlot);
     await rpc("update_reservation", {
@@ -264,8 +265,11 @@ async function handleMessage(txt, chatId) {
 
   // ===== ИЗМЕНЕНИЕ / ДУБЛЬ существующей брони =====
   // Если на слоте+имени уже есть бронь — либо дубль, либо изменение атрибутов.
-  const existingAt = row.find(r => r.name && name && r.name.toLowerCase() === name.toLowerCase() && r.slot === parseSlot(dateInfo.date, time));
+  const sameSlotP = parseSlot(dateInfo.date, time);
+  const existingAt = row.find(r => sameSlot(r.slot, sameSlotP) && r.name && name && r.name.toLowerCase() === name.toLowerCase());
   if (existingAt) {
+    const ps = parseFullList(s);
+    const sl = ps.length === 1 ? ps[0] : null;
     const updates = {};
     let any = false;
     // Кол-во человека меняем только если реально отличается (иначе это дубль)
@@ -278,12 +282,34 @@ async function handleMessage(txt, chatId) {
       updates.deposit_method = method ? method[1].toLowerCase() : null;
       any = true;
     }
-    // количество: уже в updates если guests
+    // Расширенные атрибуты из списочного формата (если есть)
+    if (sl) {
+      const rich = {
+        phone: sl.phone || null,
+        comment: sl.comment || null,
+        preorder: !!sl.preorder,
+        total_sum: sl.total_sum != null ? String(sl.total_sum) : null,
+        deposit_sum: sl.deposit_sum != null ? String(sl.deposit_sum) : null,
+        deposit_method: sl.deposit_method || null,
+        cake: sl.cake || null
+      };
+      // применяем только те, что реально изменились
+      for (const k of Object.keys(rich)) {
+        const v = rich[k];
+        const cur = existingAt[k] == null ? null : String(existingAt[k]);
+        if (String((v == null ? "" : v)) !== (cur == null ? "" : cur)) {
+          updates[k] = v; any = true;
+        }
+      }
+      if (sl.deposit_sum != null) updates.deposit = true;
+      else if (sl.preorder && sl.deposit_sum == null) updates.deposit = false;
+    }
     if (any) {
       await rpc("update_reservation", { p_data: { id: existingAt.id, ...updates, source: "bot" } });
       return "Обновлено: " + existingAt.name + " · " + fmtSlot(parseSlot(dateInfo.date, time)) +
              (updates.guests ? " · гостей: " + updates.guests : "") +
-             (updates.deposit ? " · предоплата внесена: " + updates.deposit_sum + (updates.deposit_method ? " " + updates.deposit_method : "") : "");
+             (updates.deposit ? " · предоплата внесена: " + updates.deposit_sum + (updates.deposit_method ? " " + updates.deposit_method : "") : "") +
+             (updates.comment ? " · комм." : "");
     }
     // Ничего изменяемого нет — считаем дублем
     return "Уже есть: " + existingAt.name + " в " + fmtSlot(parseSlot(dateInfo.date, time)) + " (не дублирую).";
@@ -291,11 +317,29 @@ async function handleMessage(txt, chatId) {
 
   if (!name) return "Не нашёл имя. Пример: «бронь Марина 22.11 16:00 2 чел»";
 
+  // ===== СБОР АТРИБУТОВ =====
+  // Если текст — одна броня в «списочном» формате, берём расширенные атрибуты
+  // из полного парсера (телефон, предзаказ, суммы, торт, комментарий).
+  const ps = parseFullList(s);
+  const sl = ps.length === 1 ? ps[0] : null;
+  const slotStr = parseSlot(dateInfo.date, time);
+  const attrs = {
+    phone: (sl && sl.phone) || null,
+    comment: (sl && sl.comment) || null,
+    preorder: !!(sl && sl.preorder),
+    total_sum: (sl && sl.total_sum != null) ? String(sl.total_sum) : null,
+    deposit: !!(sl && sl.deposit_sum != null),
+    deposit_sum: (sl && sl.deposit_sum != null) ? String(sl.deposit_sum) : null,
+    deposit_method: (sl && sl.deposit_method) || null,
+    cake: (sl && sl.cake) || null
+  };
+
   // ===== СОЗДАНИЕ новой брони =====
   await rpc("create_reservation", {
-    p_data: { slot: parseSlot(dateInfo.date, time), name, guests: guests || 2, no_booking: false, preorder: false, deposit: false, source: "bot" }
+    p_data: { slot: slotStr, name, guests: guests || 2, no_booking: false, source: "bot", ...attrs }
   });
-  return "Добавлено: " + name + ", " + (guests || 2) + " чел., " + fmtSlot(parseSlot(dateInfo.date, time));
+  return "Добавлено: " + name + ", " + (guests || 2) + " чел., " + fmtSlot(slotStr) +
+    (attrs.comment ? "\nКомментарий: " + attrs.comment : "");
 }
 
 function slotDay(dateDot) {
