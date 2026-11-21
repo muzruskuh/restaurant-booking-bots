@@ -127,6 +127,7 @@ function extractName(s) {
            .replace(/\b\d{1,2}[:\.]\d{2}\b/g, " ")                     // время
            .replace(/\d{1,3}\s*(?:чел|человек|человека|персон|гр|г)\b/gi, " ") // кол-во
            .replace(/\b(?:бронь|брони|бронь на|запись|забронировать|на|в)\b/gi, " ")
+           .replace(/(?:^|\s)(?:отмен[а-яё]*|удали[а-яё]*|сними[а-яё]*|убери[а-яё]*|убрать[а-яё]*)(?=\s|$)/gi, " ")
            .replace(/\s+/g, " ").trim();
   // Имя — одно-два слова с заглавной (кириллица/латиница/дефис)
   const m = t.match(/([А-ЯЁA-Z][а-яёa-zA-Z\-]+(?:[\s\-][А-ЯЁA-Z][а-яёa-zA-Z\-]+)?)/);
@@ -226,25 +227,38 @@ async function handleMessage(txt, chatId) {
 
   const dateInfo = extractDate(s, chatId);
   const time = extractTime(s);
-  if (!dateInfo || !time) {
-    return "Не понял. Пример:\nбудущий чат: «бронь Марина 22.11 16:00 2 чел»\nтекущий день: «Марина 16:00 2 чел»\nперенос: «перенеси Марина 22.11 16:00 на 18:00»";
-  }
   const name = extractName(s);
   const guests = extractGuests(s);
 
+  // ===== ОТМЕНА (время необязательно: если имя единственное на дату) =====
+  if (/удал|отмен|сними|убрать|cancel/i.test(s)) {
+    if (!dateInfo) return "Укажите дату для отмены. Пример: «отмени Марина 22.11 16:00»";
+    const day = slotDay(dateInfo.date);
+    const row = await rpc("get_reservations", { p_from: day, p_to: dayNext(day) });
+    if (!name) return "Укажите имя брони для отмены.";
+    const byName = row.filter(r => r.name && r.name.toLowerCase().includes(name.toLowerCase()));
+    if (!byName.length) return "На " + dateInfo.date + " бронь «" + name + "» не найдена.";
+    let tgt;
+    if (time) {
+      const sp = parseSlot(dateInfo.date, time);
+      tgt = byName.find(r => sameSlot(r.slot, sp)) || byName[0];
+    } else {
+      if (byName.length > 1) {
+        return "Бронь «" + name + "» на " + dateInfo.date + " есть в нескольких временах: " +
+          byName.map(r => fmtSlot(r.slot).slice(11)).join(", ") + ". Укажите время.";
+      }
+      tgt = byName[0];
+    }
+    await rpc("delete_reservation", { p_data: { id: tgt.id, source: "bot" } });
+    return "Удалено: " + tgt.name + " · " + fmtSlot(tgt.slot);
+  }
+
+  if (!dateInfo || !time) {
+    return "Не понял. Пример:\nбудущий чат: «бронь Марина 22.11 16:00 2 чел»\nтекущий день: «Марина 16:00 2 чел»\nперенос: «перенеси Марина 22.11 16:00 на 18:00»";
+  }
+
   const day = slotDay(dateInfo.date);
   const row = await rpc("get_reservations", { p_from: day, p_to: dayNext(day) });
-
-  // ===== ОТМЕНА =====
-  if (/удали|отмени|сними|убрать/.test(s)) {
-    const sp = parseSlot(dateInfo.date, time);
-    const atSlot = row.filter(r => sameSlot(r.slot, sp));
-    if (!atSlot.length) return "На " + fmtSlot(sp) + " броней нет.";
-    const tgt = (name && atSlot.find(r => r.name && r.name.toLowerCase().includes(name.toLowerCase())))
-      || atSlot[0];
-    await rpc("delete_reservation", { p_data: { id: tgt.id, source: "bot" } });
-    return "Удалено: " + tgt.name + " · " + fmtSlot(sp);
-  }
 
   // ===== ПЕРЕНОС времени =====
   const isMove = /перенес|переведи|перевес|смени|сменить|перестав|\bна\b.*\bна\b/i.test(s);
