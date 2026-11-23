@@ -53,12 +53,14 @@ function mskDate(slot) {
 }
 function fmtTime(slot) { return mskDate(slot).time; }
 function slotDate(slot) { return mskDate(slot).date; }
+// Преобразовать "YYYY-MM-DD" → "DD.MM.YYYY" для показа в чате.
+function fmtDateRu(iso) { const [y, m, d] = String(iso).split("-"); return d + "." + m + "." + y; }
 
 // Строки брони по вашим правилам. Пара филиалов: showDate (для чата «Брони»).
 function bookingLines(rec, showDate) {
   const L = [];
   const { date, time } = mskDate(rec.slot);
-  if (showDate) L.push(date);
+  if (showDate) L.push(fmtDateRu(date));
   L.push("🔳 " + time);
   L.push((rec.guests || "?") + " человек " + (rec.name || ""));
   // Опциональные поля — строка только если есть значение/чекбокс (жирным — те, что вы указали)
