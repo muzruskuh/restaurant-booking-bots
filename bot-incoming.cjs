@@ -271,7 +271,9 @@ async function handleMessage(txt, chatId) {
   }
 
   const day = slotDay(dateInfo.date);
-  const row = await rpc("get_reservations", { p_from: day, p_to: dayNext(day) });
+  const pfrom = day, pto = dayNext(day);
+  const row = await rpc("get_reservations", { p_from: pfrom, p_to: pto });
+  console.log("DIAG row: p_from=" + pfrom + " p_to=" + pto + " len=" + (row && row.length) + " first=" + (row && row[0] ? row[0].name : "-"));
 
   // ===== ПЕРЕНОС времени =====
   const isMove = /перенес|переведи|перевес|смени|сменить|перестав|\bна\b.*\bна\b/i.test(s);
