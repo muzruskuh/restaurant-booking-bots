@@ -231,6 +231,7 @@ async function handleMessage(txt, chatId) {
   // Проверка ДО isService: в списке есть служебные строки («время», «стоп»), их нельзя
   // принимать за маркер «молчать».
   const fullSlots = parseFullList(s);
+  console.log("DIAG msg chat=" + (chatId||"") + " fullSlots=" + fullSlots.length + " txt=" + JSON.stringify(s));
   if (fullSlots.length >= 2) {
     return await handleFullList(fullSlots, chatId);
   }
@@ -293,6 +294,8 @@ async function handleMessage(txt, chatId) {
   // Если на слоте+имени уже есть бронь — либо дубль, либо изменение атрибутов.
   const sameSlotP = parseSlot(dateInfo.date, time);
   const existingAt = row.find(r => sameSlot(r.slot, sameSlotP) && r.name && name && r.name.toLowerCase() === name.toLowerCase());
+  console.log("DIAG single: name=" + JSON.stringify(name) + " time=" + JSON.stringify(time) + " sameSlotP=" + sameSlotP +
+    " rowLen=" + (row && row.length) + " existingAt=" + (existingAt ? "het(" + existingAt.name + "/" + existingAt.guests + ")" : "нет"));
   if (existingAt) {
     const ps = parseFullList(s);
     const sl = ps.length === 1 ? ps[0] : null;
