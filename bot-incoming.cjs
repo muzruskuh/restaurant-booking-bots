@@ -379,10 +379,13 @@ function slotDay(dateDot) {
   return `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}T00:00:00+03:00`;
 }
 function dayNext(day) {
-  const d = new Date(day);
-  d.setDate(d.getDate() + 1);
+  // Инкремент календарной даты, устойчивый к часовому поясу сервера.
+  // Извлекаем Y-M-D из строки (например 2026-11-24T00:00:00+03:00) и сдвигаем как календарную дату.
+  const m = String(day).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) { const d0 = new Date(day); return d0.toISOString().slice(0, 10) + "T00:00:00+03:00"; }
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1));
   const p = n => String(n).padStart(2,"0");
-  return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + "T00:00:00+03:00";
+  return d.getUTCFullYear() + "-" + p(d.getUTCMonth()+1) + "-" + p(d.getUTCDate()) + "T00:00:00+03:00";
 }
 
 async function main() {
