@@ -82,7 +82,10 @@ function compose(rec) {
   const today = todayMsk();
   const isToday = slotDate(rec.slot) === today;
   const showDate = !isToday; // в чате «Брони» показываем дату
-  const base = bookingLines(rec, showDate);
+  // Атрибуты брони приходят отдельным полем payload (jsonb) — подмешиваем,
+  // чтобы bookingLines видел phone/comment/суммы и т.д.
+  const full = { ...rec, ...(rec.payload || {}) };
+  const base = bookingLines(full, showDate);
 
   if (rec.action === "create") return base.join("\n");
   if (rec.action === "delete") return base.concat("<b>❌ ОТМЕНА</b>").join("\n");
