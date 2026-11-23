@@ -13,6 +13,9 @@ const TOKEN = process.env.BOT_INCOMING_TOKEN || "";
 const API = "https://api.telegram.org/bot" + TOKEN;
 const CHAT_FUTURE_ID = Number(process.env.CHAT_FUTURE_ID || 0);
 const CHAT_CURRENT_ID = Number(process.env.CHAT_CURRENT_ID || 0);
+// Служебный лог-чат: сюда бот пишет результаты броней (Добавлено/Уже есть/Обновлено/Удалено/Ошибка),
+// чтобы в реальных чатах с гостями не было служебной переписки.
+const CHAT_LOG_ID = Number(process.env.CHAT_LOG_ID || 0);
 const fs = require("fs");
 const OFFSET_FILE = __dirname + "/.bot-incoming.offset";
 
@@ -22,6 +25,14 @@ function loadOffset() {
 }
 function saveOffset(v) {
   try { fs.writeFileSync(OFFSET_FILE, String(v)); } catch (e) { /* не критично */ }
+}
+
+// Отправить служебное сообщение: в лог-чат (если задан) либо в чат, откуда пришло сообщение.
+// В реальные чаты с гостями (когда CHAT_LOG_ID настроен) служебная переписка не попадает.
+async function sendLog(text, fallbackChatId) {
+  const target = CHAT_LOG_ID || fallbackChatId;
+  if (!target) return;
+  await tg("sendMessage", { chat_id: target, text }).catch(() => {});
 }
 
 async function tg(method, payload) {
@@ -393,17 +404,20 @@ async function main() {
       const chatId = u.message.chat.id;
       try {
         const txt = u.message.text.trim();
-        // Команда /id — вернуть id текущего чата (для настройки CHAT_CURRENT_ID / CHAT_FUTURE_ID)
+        // Команда /id — вернуть id текущего чата (для настройки CHAT_CURRENT_ID / CHAT_FUTURE_ID).
+        // Отвечаем в исходный чат — иначе смысл команды теряется.
         if (/^\/id\b/i.test(txt) || /^id чата/i.test(txt)) {
           await tg("sendMessage", { chat_id: chatId, text: "ID этого чата: " + chatId });
           continue;
         }
         const reply = await handleMessage(u.message.text, chatId);
-        if (reply) await tg("sendMessage", { chat_id: chatId, text: reply });
+        // Все служебные результаты (Добавлено/Уже есть/Обновлено/Удалено/Ошибка) шлём в лог-чат,
+        // а в реальные чаты с гостями не пишем ничего. Пока CHAT_LOG_ID не задан — отвечаем в исходный чат.
+        if (reply) await sendLog(reply, chatId);
         // если reply === null — служебное, молчим
       } catch (e) {
         console.error("handle err:", e.message);
-        await tg("sendMessage", { chat_id: chatId, text: "Ошибка: " + e.message }).catch(()=>{});
+        await sendLog("Ошибка: " + e.message, chatId);
       }
     }
   }
