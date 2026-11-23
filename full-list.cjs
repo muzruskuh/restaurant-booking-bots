@@ -190,8 +190,14 @@ function parseFullList(text) {
       continue;
     }
 
-    // остальное — в комментарий (кроме чисто "осталось опл N")
-    if (!/осталось\s+опл/i.test(s)) {
+    // остальное — в комментарий, НО не дублируем то, что уже разложено по полям:
+    // телефон и кол-во гостей (возможно с именем). Номер стола/зала отдельного поля
+    // не имеет, поэтому строка с ним остаётся в комментарии.
+    const phoneOnly = phone && s.replace(phone, "").trim() === "";
+    const hasGuestPhrase = /(?:^|[^0-9])(\d{1,2})\s*(?:чел|человека?|человек|персон|гостей?|гостя?)/i.test(s);
+    const hasTableWord = /стол|зал|окно/i.test(s);
+    const keepInComment = !phoneOnly && !(hasGuestPhrase && !hasTableWord) && !/осталось\s+опл/i.test(s);
+    if (keepInComment) {
       cur.comment = cur.comment ? cur.comment + "; " + s : s;
     }
   }
