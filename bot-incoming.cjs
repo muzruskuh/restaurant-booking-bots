@@ -61,6 +61,21 @@ function isService(s) {
   return SERVICEWORDS.some(w => low.includes(w.toLowerCase()));
 }
 
+// Детектор «списка прихода/графика сотрудников»: много строк вида «Имя ЧЧ:ММ» подряд.
+// Бронь — это обычно 1-2 имени; если в тексте ≥4 строк с временем, это приход, а не броня.
+function isStaffArrival(s) {
+  const lines = s.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 4) return false;
+  const timeLines = lines.filter(l => /\b\d{1,2}:\d{2}\b/.test(l) && /[А-ЯЁA-Z]/.test(l));
+  // Все строки текста должны быть «имя + время» (без дат, без спецлиний списка броней)
+  const allTimes = timeLines.length === lines.length;
+  if (!allTimes) return false;
+  // Исключаем явные списочные конструкции броней (заголовки дат, спецсимволы блокировки)
+  const hasSpecial = /🔳|🔵|❌|ДЕКАБРЬ|ЯНВАРЬ|ДЕК |ЯНВ |ПРЕДЗАКАЗ|ОБЩАЯ|СТОЛ|ОСТАЛОСЬ|такая бронь|бронь на/i.test(s);
+  if (hasSpecial) return false;
+  return true;
+}
+
 // Текущая дата (Москва) в формате ДД.ММ для чата текущего дня
 function todayMsk() {
   const d = new Date(Date.now() + 3 * 3600 * 1000); // UTC+3
@@ -243,6 +258,8 @@ async function handleMessage(txt, chatId) {
   if (fullSlots.length >= 2) {
     return await handleFullList(fullSlots, chatId);
   }
+  // Список прихода сотрудников (много строк «Имя ЧЧ:ММ») — молча игнорируем.
+  if (isStaffArrival(s)) return null;
   // Служебная информация в чате текущего дня — молча игнорируем (вернём null)
   if (isService(s)) return null;
 
