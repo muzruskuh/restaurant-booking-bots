@@ -84,7 +84,7 @@ function extractDeposit(s) {
   const low = s.toLowerCase();
   let method = null;
   if (/термин/.test(low)) method = "терминал";
-  else if (/налич/.test(low)) method = "наличные";
+  else if (/налич|^нал\b|нал$| нал/i.test(low)) method = "наличные";
   else if (/карта\s*лв|лв/.test(low)) method = "карта ЛВ";
   else if (/карт/.test(low)) method = "карта ЛВ";
   return { sum, method };
@@ -191,12 +191,13 @@ function parseFullList(text) {
     }
 
     // остальное — в комментарий, НО не дублируем то, что уже разложено по полям:
-    // телефон и кол-во гостей (возможно с именем). Номер стола/зала отдельного поля
-    // не имеет, поэтому строка с ним остаётся в комментарии.
+    // телефон, кол-во гостей, предзаказ, суммы/предоплата, остаток. Номер стола/зала
+    // отдельного поля не имеет, поэтому строка с ним остаётся в комментарии.
     const phoneOnly = phone && s.replace(phone, "").trim() === "";
     const hasGuestPhrase = /(?:^|[^0-9])(\d{1,2})\s*(?:чел|человека?|человек|персон|гостей?|гостя?)/i.test(s);
-    const hasTableWord = /стол|зал|окно/i.test(s);
-    const keepInComment = !phoneOnly && !(hasGuestPhrase && !hasTableWord) && !/осталось\s+опл/i.test(s);
+    const hasTableWord = /стол|зал|окно|веранда|мезонин/i.test(s);
+    const isMoneyLine = /предзаказ|общая|предоплат|осталось\s*опл|осталось опл/i.test(s);
+    const keepInComment = !phoneOnly && !(hasGuestPhrase && !hasTableWord) && !isMoneyLine && !/осталось\s+опл/i.test(s);
     if (keepInComment) {
       cur.comment = cur.comment ? cur.comment + "; " + s : s;
     }
