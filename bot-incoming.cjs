@@ -429,7 +429,15 @@ async function main() {
         const reply = await handleMessage(u.message.text, chatId);
         // Все служебные результаты (Добавлено/Уже есть/Обновлено/Удалено/Ошибка) шлём в лог-чат,
         // а в реальные чаты с гостями не пишем ничего. Пока CHAT_LOG_ID не задан — отвечаем в исходный чат.
-        if (reply) await sendLog(reply, chatId);
+        if (reply) {
+          let out = reply;
+          // Для «Не понял» добавляем текст исходного сообщения, чтобы в лог-чате было видно,
+          // какое именно сообщение бот не разобрал.
+          if (/^Не понял/.test(reply)) {
+            out = "⁉️ Не понял:\n" + (u.message.text || "") + "\n\n—\n" + reply;
+          }
+          await sendLog(out, chatId);
+        }
         // если reply === null — служебное, молчим
       } catch (e) {
         console.error("handle err:", e.message);
