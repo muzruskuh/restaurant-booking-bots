@@ -385,6 +385,8 @@ function dayNext(day) {
 
 async function main() {
   if (!TOKEN) { console.error("Задайте BOT_INCOMING_TOKEN в .env"); process.exit(1); }
+  const { SUPABASE_URL } = require("./bots.common.cjs");
+  console.log("STARTUP db=" + (SUPABASE_URL || "(пусто)") + " chatLog=" + CHAT_LOG_ID);
   console.log("Бот-приёмник запущен (polling). Выход — Ctrl+C");
   console.log("Подсказка: напишите боту /id из чата → он вернёт id этого чата.");
   // offset персистентный: переживает перезапуск Render, иначе бот заново
