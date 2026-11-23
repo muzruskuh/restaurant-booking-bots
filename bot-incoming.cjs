@@ -148,7 +148,15 @@ function extractName(s) {
 }
 
 function fmtSlot(slot) {
-  return (slot.slice(0, 10) + " " + slot.slice(11, 16));
+  // Слот из базы Supabase приходит в UTC (…14:00+00:00), а parseSlot строит +03:00 (17:00+03:00).
+  // Всегда показываем время по Москве (+03:00), чтобы «Удалено/Обновлено/Перенесено»
+  // отображали то же время, что видел пользователь при создании.
+  const d = new Date(slot);
+  if (Number.isNaN(d.getTime())) return slot;
+  const msk = new Date(d.getTime() + 3 * 3600 * 1000);
+  const p = n => String(n).padStart(2, "0");
+  return msk.getUTCFullYear() + "-" + p(msk.getUTCMonth() + 1) + "-" + p(msk.getUTCDate()) + " " +
+    p(msk.getUTCHours()) + ":" + p(msk.getUTCMinutes());
 }
 
 // Сравнить два слота по моменту времени (не по строке!): Supabase возвращает slot в UTC,
