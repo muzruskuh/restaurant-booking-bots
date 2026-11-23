@@ -31,9 +31,9 @@ function saveOffset(v) {
 // В реальные чаты с гостями (когда CHAT_LOG_ID настроен) служебная переписка не попадает.
 async function sendLog(text, fallbackChatId) {
   const target = CHAT_LOG_ID || fallbackChatId;
-  console.log("sendLog: CHAT_LOG_ID=" + CHAT_LOG_ID + " target=" + target + " text=" + JSON.stringify(text));
   if (!target) return;
-  await tg("sendMessage", { chat_id: target, text }).then(() => console.log("sendLog: OK -> " + target)).catch((e) => console.log("sendLog: ERR " + e.message));
+  console.log("sendLog -> " + target + ": " + text.split("\n")[0]);
+  await tg("sendMessage", { chat_id: target, text }).catch((e) => console.log("sendLog ERR " + e.message));
 }
 
 async function tg(method, payload) {
@@ -137,12 +137,13 @@ function extractName(s) {
   // Нормализуем: убираем дату/время/кол-во/служебные слова, остаток — имя.
   let t = s.replace(/\b\d{1,2}\.\d{1,2}\b/g, " ")                      // дата
            .replace(/\b\d{1,2}[:\.]\d{2}\b/g, " ")                     // время
-           .replace(/\d{1,3}\s*(?:чел|человек|человека|персон|гр|г)\b/gi, " ") // кол-во
+           .replace(/\d{1,3}\s*(?:человека|человек|персон|чел|гр|г)\s*/gi, " ") // кол-во
            .replace(/\b(?:бронь|брони|бронь на|запись|забронировать|на|в)\b/gi, " ")
            .replace(/(?:^|\s)(?:отмен[а-яё]*|удали[а-яё]*|сними[а-яё]*|убери[а-яё]*|убрать[а-яё]*)(?=\s|$)/gi, " ")
            .replace(/\s+/g, " ").trim();
-  // Имя — одно-два слова с заглавной (кириллица/латиница/дефис)
-  const m = t.match(/([А-ЯЁA-Z][а-яёa-zA-Z\-]+(?:[\s\-][А-ЯЁA-Z][а-яёa-zA-Z\-]+)?)/);
+  // Имя — одно-два слова (первое с любой буквой): заглавное начало — до двух слов,
+  // строчное — одно слово (чтобы «тест отмена» дало «тест», а не «тест отмена»).
+  const m = t.match(/([А-ЯЁA-Z][а-яёa-zA-Z\-]+(?:[\s\-][А-ЯЁA-Z][а-яёa-zA-Z\-]+)?|[а-яёa-z\-]+)/);
   return m ? m[1] : null;
 }
 
@@ -231,7 +232,6 @@ async function handleMessage(txt, chatId) {
   // Проверка ДО isService: в списке есть служебные строки («время», «стоп»), их нельзя
   // принимать за маркер «молчать».
   const fullSlots = parseFullList(s);
-  console.log("DIAG msg chat=" + (chatId||"") + " fullSlots=" + fullSlots.length + " txt=" + JSON.stringify(s));
   if (fullSlots.length >= 2) {
     return await handleFullList(fullSlots, chatId);
   }
@@ -273,7 +273,6 @@ async function handleMessage(txt, chatId) {
   const day = slotDay(dateInfo.date);
   const pfrom = day, pto = dayNext(day);
   const row = await rpc("get_reservations", { p_from: pfrom, p_to: pto });
-  console.log("DIAG row: p_from=" + pfrom + " p_to=" + pto + " len=" + (row && row.length) + " first=" + (row && row[0] ? row[0].name : "-"));
 
   // ===== ПЕРЕНОС времени =====
   const isMove = /перенес|переведи|перевес|смени|сменить|перестав|\bна\b.*\bна\b/i.test(s);
@@ -296,8 +295,6 @@ async function handleMessage(txt, chatId) {
   // Если на слоте+имени уже есть бронь — либо дубль, либо изменение атрибутов.
   const sameSlotP = parseSlot(dateInfo.date, time);
   const existingAt = row.find(r => sameSlot(r.slot, sameSlotP) && r.name && name && r.name.toLowerCase() === name.toLowerCase());
-  console.log("DIAG single: name=" + JSON.stringify(name) + " time=" + JSON.stringify(time) + " sameSlotP=" + sameSlotP +
-    " rowLen=" + (row && row.length) + " existingAt=" + (existingAt ? "het(" + existingAt.name + "/" + existingAt.guests + ")" : "нет"));
   if (existingAt) {
     const ps = parseFullList(s);
     const sl = ps.length === 1 ? ps[0] : null;
