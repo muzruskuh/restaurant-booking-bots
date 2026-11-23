@@ -31,8 +31,9 @@ function saveOffset(v) {
 // В реальные чаты с гостями (когда CHAT_LOG_ID настроен) служебная переписка не попадает.
 async function sendLog(text, fallbackChatId) {
   const target = CHAT_LOG_ID || fallbackChatId;
+  console.log("sendLog: CHAT_LOG_ID=" + CHAT_LOG_ID + " target=" + target + " text=" + JSON.stringify(text));
   if (!target) return;
-  await tg("sendMessage", { chat_id: target, text }).catch(() => {});
+  await tg("sendMessage", { chat_id: target, text }).then(() => console.log("sendLog: OK -> " + target)).catch((e) => console.log("sendLog: ERR " + e.message));
 }
 
 async function tg(method, payload) {
