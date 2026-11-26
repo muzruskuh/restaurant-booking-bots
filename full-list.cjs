@@ -196,8 +196,11 @@ function parseFullList(text) {
     const phoneOnly = phone && s.replace(phone, "").trim() === "";
     const hasGuestPhrase = /(?:^|[^0-9])(\d{1,2})\s*(?:чел|человека?|человек|персон|гостей?|гостя?)/i.test(s);
     const hasTableWord = /стол|зал|окно|веранда|мезонин/i.test(s);
+    // Строка «Имя N» (заглавное имя + обособленное число в конце) — это имя и кол-во гостей,
+    // не комментарий. Напр. «Валентина 4». Не цепляем «40 СТОЛ» (число в начале) и «Таисия 3 стол» (есть слово).
+    const isNameNumber = /^\s*[А-ЯЁA-Z][а-яёa-zA-Z\-]+(?:\s[А-ЯЁA-Z][а-яёa-zA-Z\-]+)?\s+\d{1,2}\s*$/.test(s);
     const isMoneyLine = /предзаказ|общая|предоплат|осталось\s*опл|осталось опл/i.test(s);
-    const keepInComment = !phoneOnly && !(hasGuestPhrase && !hasTableWord) && !isMoneyLine && !/осталось\s+опл/i.test(s);
+    const keepInComment = !phoneOnly && !(hasGuestPhrase && !hasTableWord) && !isNameNumber && !isMoneyLine && !/осталось\s+опл/i.test(s);
     if (keepInComment) {
       cur.comment = cur.comment ? cur.comment + "; " + s : s;
     }
