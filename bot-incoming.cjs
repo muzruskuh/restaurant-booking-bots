@@ -359,13 +359,19 @@ async function handleMessage(txt, chatId) {
     let any = false;
     // Кол-во человека меняем только если реально отличается (иначе это дубль)
     if (guests !== null && guests !== existingAt.guests) { updates.guests = guests; any = true; }
-    const depSum = s.match(/\b(\d{3,})(?:\s*(?:руб|₽))?/i);
-    if (/предоплат|внес|оплатил/i.test(s) && depSum) {
-      updates.deposit = true;
-      updates.deposit_sum = Number(depSum[1]);
-      const method = s.match(/(карта\s*лв|терминал|наличны)/i);
-      updates.deposit_method = method ? method[1].toLowerCase() : null;
-      any = true;
+    // Сумму предоплаты берём ТОЛЬКО непосредственно после слова «предоплат/внес/оплатил»,
+    // а не первое число из ≥3 цифр во всём тексте (иначе телефон 89858978179 попадает
+    // в deposit_sum и валится numeric(10,2) поле overflow).
+    const depMatch = s.match(/(?:предоплат|внес|оплатил)[^\d]{0,12}(\d{1,8})(?:[.,]\d{1,2})?(?:\s*(?:руб|₽))?/i);
+    if (/предоплат|внес|оплатил/i.test(s) && depMatch) {
+      const depAmount = Number(depMatch[1]);
+      if (depAmount > 0 && depAmount < 100000000) { // numeric(10,2) лимит
+        updates.deposit = true;
+        updates.deposit_sum = depAmount;
+        const method = s.match(/(карта\s*лв|терминал|наличны)/i);
+        updates.deposit_method = method ? method[1].toLowerCase() : null;
+        any = true;
+      }
     }
     // Расширенные атрибуты из списочного формата (если есть)
     if (sl) {
