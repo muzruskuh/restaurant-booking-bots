@@ -297,7 +297,7 @@ async function handleMessage(txt, chatId) {
 
   const dateInfo = extractDate(s, chatId);
   const time = extractTime(s);
-  const name = extractName(s);
+  let name = extractName(s); // let: ниже может перезаписаться из полного парсера (sl.name)
   const guests = extractGuests(s);
 
   // ===== ОТМЕНА (время необязательно: если имя единственное на дату) =====
