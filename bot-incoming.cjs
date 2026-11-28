@@ -147,6 +147,16 @@ function extractGuests(s) {
   return null;
 }
 
+// Слова, означающие место/стол/зал в ресторане — никогда не имена гостей.
+// «40 стол», «50 зал», «стол накрыть» — это номер места или пометка, а не имя.
+// Если парсер принял одно из них за имя — отбрасываем и продолжаем поиск.
+const PLACE_WORDS = ["стол", "столик", "зал", "залб", "окно", "веранда", "мезонин", "кабинет", "балкон", "бар"];
+
+function isPlaceWord(w) {
+  const low = (w || "").toLowerCase().replace(/\s+/g, " ").trim();
+  return PLACE_WORDS.includes(low);
+}
+
 function extractName(s) {
   // Имя обычно идёт не первым (до него время/кол-во могут стоять в другом порядке).
   // Нормализуем: убираем дату/время/кол-во/служебные слова, остаток — имя.
@@ -155,13 +165,24 @@ function extractName(s) {
            .replace(/\d{1,3}\s*[,]\s*\d{1,3}\s*(?:чел|человек|персон|гост)\w*/gi, " ")
            .replace(/(?:^|\s)\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?=\s|$)/gi, " ") // дата словом: «31 декабря»
            .replace(/\d{1,3}\s*(?:человека|человек|персон|чел|гр|г)\s*/gi, " ") // кол-во
-           .replace(/\b(?:бронь|брони|бронь на|запись|забронировать|на|в)\b/gi, " ")
+           .replace(/(?:^|\s)(?:бронь|брони|бронь\s+на|запись|забронировать|перенес[а-яё]*|переведи|перевес|смени|сменить|перестав)\s+(?=[А-ЯЁA-Zа-яёa-z])/gi, " ")
            .replace(/(?:^|\s)(?:отмен[а-яё]*|удали[а-яё]*|сними[а-яё]*|убери[а-яё]*|убрать[а-яё]*)(?=\s|$)/gi, " ")
+           .replace(/(?:^|\s)(?:стол|столик|зал|окно|веранда|мезонин|кабинет|балкон|бар)(?=\s|$)/gi, " ") // слова-места не имя
            .replace(/\s+/g, " ").trim();
-  // Имя — одно-два слова (первое с любой буквой): заглавное начало — до двух слов,
-  // строчное — одно слово (чтобы «тест отмена» дало «тест», а не «тест отмена»).
-  const m = t.match(/([А-ЯЁA-Z][а-яёa-zA-Z\-]+(?:[\s\-][А-ЯЁA-Z][а-яёa-zA-Z\-]+)?|[а-яёa-z\-]+)/);
-  return m ? m[1] : null;
+  // Собираем все слова-кандидаты, отбрасываем стоп-слова (место, команды).
+  // Предпочитаем заглавное слово-имя (личное), а служебные пропускаем.
+  const tokens = t.split(/[\s\/]+/).filter(Boolean);
+  let fallback = null;
+  for (const w of tokens) {
+    const low = w.toLowerCase();
+    if (PLACE_WORDS.includes(low)) continue;                 // стол/зал/окно — не имя
+    if (/^(?:бронь|брони|запись|забронировать|на|в|отмен|удали|сними|убери|убрать|перенес|переведи|смени|перестав)$/.test(low)) continue; // команды
+    if (/^[\d+\-₽.,]+$/.test(w)) continue;                    // числа/суммы
+    // Имя личное — с заглавной буквы, берём первое такое
+    if (/^[А-ЯЁA-Z]/.test(w) && /[а-яёa-z]/i.test(w)) return w;
+    if (!fallback) fallback = w;                              // строчное — как запасной вариант
+  }
+  return fallback;
 }
 
 function fmtSlot(slot) {
@@ -377,9 +398,14 @@ async function handleMessage(txt, chatId) {
   // из полного парсера (телефон, предзаказ, суммы, торт, комментарий).
   const ps = parseFullList(s);
   const sl = ps.length === 1 ? ps[0] : null;
+  // Имя из полного парсера (slotName) распознаёт «Имя / N чел» и слэш-паттерн
+  // надёжнее, чем extractName(s) по всей строке. Если оно есть и не слово-место,
+  // берём его; иначе оставляем из extractName.
+  if (sl && sl.name && !isPlaceWord(sl.name)) name = sl.name;
   const slotStr = parseSlot(dateInfo.date, time);
+  const phoneFromMsg = (sl && sl.phone) || null;
   const attrs = {
-    phone: (sl && sl.phone) || null,
+    phone: phoneFromMsg,
     comment: (sl && sl.comment) || null,
     preorder: !!(sl && sl.preorder),
     total_sum: (sl && sl.total_sum != null) ? String(sl.total_sum) : null,
@@ -388,6 +414,34 @@ async function handleMessage(txt, chatId) {
     deposit_method: (sl && sl.deposit_method) || null,
     cake: (sl && sl.cake) || null
   };
+
+  // ===== ДУБЛЬ ПО ТЕЛЕФОНУ на слоте (запасной ключ) =====
+  // Если имя распозналось неточно, но на том же слоте уже есть бронь с тем же
+  // номером телефона — это то же бронирование (гость уточнил детали), а не новая
+  // запись. Обновляем существующую, а не создаём дубль.
+  if (phoneFromMsg) {
+    const normPh = phoneFromMsg.replace(/\D/g, "");
+    const byPhone = row.find(r => sameSlot(r.slot, slotStr) && r.phone &&
+      String(r.phone).replace(/\D/g, "") === normPh && normPh.length >= 6);
+    if (byPhone && (!existingAt || byPhone.id !== existingAt.id)) {
+      // объединяем атрибуты сообщения с тем, что уже есть
+      const updates = {};
+      for (const k of Object.keys(attrs)) {
+        const v = attrs[k];
+        const cur = byPhone[k] == null ? null : String(byPhone[k]);
+        if (String((v == null ? "" : v)) !== (cur == null ? "" : cur)) updates[k] = v;
+      }
+      if (guests !== null && guests !== byPhone.guests) updates.guests = guests;
+      if (sl && sl.deposit_sum != null) updates.deposit = true;
+      if (Object.keys(updates).length) {
+        await rpc("update_reservation", { p_data: { id: byPhone.id, ...updates, source: "bot" } });
+        return "Обновлено (по телефону): " + byPhone.name + " · " + fmtSlot(slotStr) +
+          (updates.comment ? " · комм." : "");
+      }
+      // ничего менять не нужно — это дубль того же телефона
+      return "Уже есть (тот же телефон): " + byPhone.name + " в " + fmtSlot(slotStr) + " (не дублирую).";
+    }
+  }
 
   // ===== СОЗДАНИЕ новой брони =====
   await rpc("create_reservation", {
